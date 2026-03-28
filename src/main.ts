@@ -11,6 +11,8 @@ import { EquipmentSelect } from './ui/EquipmentSelect'
 import { PhaseOverlay } from './ui/PhaseOverlay'
 import { ScoreCard } from './ui/ScoreCard'
 import { AudioManager } from './utils/audio'
+import { TutorialSystem } from './systems/TutorialSystem'
+import { MainMenu } from './scenes/MainMenu'
 
 // --- Engine & Scene ---
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
@@ -62,6 +64,17 @@ const phaseOverlay = new PhaseOverlay(ui)
 // End-of-job scorecard
 const scoreCard = new ScoreCard(ui)
 
+// Tutorial system
+const tutorial = new TutorialSystem(scene, ui, gameState)
+
+// Main menu
+const mainMenu = new MainMenu(scene, ui)
+mainMenu.show((options) => {
+  if (options.tutorialEnabled) {
+    tutorial.start()
+  }
+})
+
 // --- Audio ---
 const audio = new AudioManager(scene)
 
@@ -81,7 +94,7 @@ phaseOverlay.show(GamePhase.PRE_JOB)
 scene.onKeyboardObservable.add((kbInfo) => {
   if (kbInfo.type !== KeyboardEventTypes.KEYDOWN) return
   // Don't process game keys when overlays are open
-  if (equipSelect.isVisible || phaseOverlay.isVisible || scoreCard.isVisible) {
+  if (mainMenu.isVisible || equipSelect.isVisible || phaseOverlay.isVisible || scoreCard.isVisible) {
     // ESC closes scorecard
     if (kbInfo.event.key === 'Escape' && scoreCard.isVisible) {
       scoreCard.hide()
