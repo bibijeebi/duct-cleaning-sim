@@ -70,6 +70,13 @@ export class MainMenu {
     });
     btnPanel.addControl(startBtn);
 
+    // Start Scenario 2
+    const start2Btn = this._createMenuButton('START: Courthouse (Multi-Floor)', '#AADDFF');
+    start2Btn.onPointerUpObservable.add(() => {
+      this._startScenario('courthouse');
+    });
+    btnPanel.addControl(start2Btn);
+
     // Tutorial toggle
     const tutBtn = this._createMenuButton('[x] Tutorial Mode', '#AAAAAA');
     tutBtn.onPointerUpObservable.add(() => {

@@ -1,6 +1,6 @@
 import { Engine, Scene, Vector3, HemisphericLight, Color4, KeyboardEventTypes } from '@babylonjs/core'
 import { AdvancedDynamicTexture } from '@babylonjs/gui'
-import { PHYSICS, COLORS } from './utils/constants'
+import { PHYSICS, COLORS, BUILDING } from './utils/constants'
 import { PlayerController } from './systems/PlayerController'
 import { GameState, GamePhase } from './systems/GameState'
 import { BuildingGenerator, getScenario1Config } from './models/BuildingGenerator'
@@ -213,6 +213,26 @@ player.onInteract.add((mesh) => {
 
   // HVAC interactions (air handler, registers, ducts, coils, filter)
   if (hvacSystem.handleInteraction(mesh, equipSystem.activeToolId)) {
+    return
+  }
+
+  // PTAC unit interaction — count as air handler found
+  if (name.startsWith('ptac_unit_')) {
+    gameState.completeTask('find-air-handler')
+    gameState.completeTask('identify-system')
+    hud._updateTasks()
+    hud.showMessage('PTAC unit found — Fan coil system identified')
+    return
+  }
+
+  // Elevator interaction — teleport between floors
+  if (name.startsWith('elevator_')) {
+    const currentFloor = mesh.metadata?.elevatorFloor as number ?? 0;
+    const targetFloor = (currentFloor + 1) % 3;
+    const floorY = targetFloor * BUILDING.WALL_HEIGHT + PHYSICS.PLAYER_HEIGHT
+    player.teleport(new Vector3(player.camera.position.x, floorY, player.camera.position.z))
+    hud.showMessage(`Elevator: moved to floor ${targetFloor + 1}`)
+    audio.playSound('alert_phase')
     return
   }
 

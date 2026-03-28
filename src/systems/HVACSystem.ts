@@ -32,8 +32,8 @@ export class HVACSystem {
   /**
    * Initialize the HVAC system for a given building config.
    */
-  init(config: BuildingConfig, ductMaterial: DuctMaterialType = 'rigid'): void {
-    this._ductNetwork.generate(config, ductMaterial);
+  init(config: BuildingConfig, ductMaterial: DuctMaterialType = 'rigid', systemType: string = 'split'): void {
+    this._ductNetwork.generate(config, ductMaterial, systemType);
   }
 
   /**

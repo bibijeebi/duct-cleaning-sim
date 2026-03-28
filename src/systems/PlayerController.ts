@@ -179,6 +179,8 @@ export class PlayerController {
       name.startsWith('vav_') ||
       name.startsWith('equipment_') ||
       name.startsWith('van_') ||
+      name.startsWith('ptac_') ||
+      name.startsWith('elevator_') ||
       name.startsWith('ceiling_tile_') ||
       name.startsWith('door_') ||
       name.startsWith('panel_') ||
@@ -196,6 +198,8 @@ export class PlayerController {
     if (name.startsWith('duct_')) return 'Ductwork';
     if (name.startsWith('air_handler')) return 'Air Handler';
     if (name.startsWith('vav_')) return 'VAV Box';
+    if (name.startsWith('ptac_')) return 'PTAC Unit';
+    if (name.startsWith('elevator_')) return 'Elevator';
     if (name.startsWith('equipment_')) return 'Equipment';
     if (name.startsWith('van_')) return 'Van';
     if (name.startsWith('ceiling_tile_')) return 'Ceiling Tile';

@@ -16,7 +16,8 @@ export interface RoomConfig {
   z: number;
   width: number;
   depth: number;
-  type: 'office' | 'hallway' | 'mechanical' | 'lobby' | 'restroom' | 'exterior';
+  type: 'office' | 'hallway' | 'mechanical' | 'lobby' | 'restroom' | 'exterior' | 'courtroom' | 'elevator';
+  floor?: number;
 }
 
 export interface DoorConfig {
@@ -90,11 +91,18 @@ export class BuildingGenerator {
         continue;
       }
 
-      this._createRoomFloor(room, config);
-      this._createRoomCeiling(room, config);
-      this._createRoomWalls(room, config, doorOpenings);
-      this._createCeilingTiles(room, config);
-      this._createRoomLighting(room, config);
+      const floorOffset = (room.floor ?? 0) * config.wallHeight;
+
+      this._createRoomFloor(room, config, floorOffset);
+      this._createRoomCeiling(room, config, floorOffset);
+      this._createRoomWalls(room, config, doorOpenings, floorOffset);
+      this._createCeilingTiles(room, config, floorOffset);
+      this._createRoomLighting(room, config, floorOffset);
+
+      // Elevator shaft visual
+      if (room.type === 'elevator') {
+        this._createElevator(room, config, floorOffset);
+      }
     }
   }
 
@@ -144,7 +152,7 @@ export class BuildingGenerator {
     }
   }
 
-  private _createRoomFloor(room: RoomConfig, _config: BuildingConfig): void {
+  private _createRoomFloor(room: RoomConfig, _config: BuildingConfig, floorOffset: number = 0): void {
     const floor = MeshBuilder.CreateGround(
       `floor_${room.id}`,
       { width: room.width, height: room.depth },
@@ -152,7 +160,7 @@ export class BuildingGenerator {
     );
     floor.position = new Vector3(
       room.x + room.width / 2,
-      0,
+      floorOffset,
       room.z + room.depth / 2
     );
     floor.checkCollisions = true;
@@ -162,7 +170,7 @@ export class BuildingGenerator {
     this._meshes.push(floor);
   }
 
-  private _createRoomCeiling(room: RoomConfig, config: BuildingConfig): void {
+  private _createRoomCeiling(room: RoomConfig, config: BuildingConfig, floorOffset: number = 0): void {
     const ceiling = MeshBuilder.CreateGround(
       `ceiling_${room.id}`,
       { width: room.width, height: room.depth },
@@ -170,7 +178,7 @@ export class BuildingGenerator {
     );
     ceiling.position = new Vector3(
       room.x + room.width / 2,
-      config.wallHeight,
+      floorOffset + config.wallHeight,
       room.z + room.depth / 2
     );
     // Flip ceiling to face downward
@@ -182,30 +190,31 @@ export class BuildingGenerator {
   private _createRoomWalls(
     room: RoomConfig,
     config: BuildingConfig,
-    doorOpenings: Map<string, Array<{ pos: number; width: number }>>
+    doorOpenings: Map<string, Array<{ pos: number; width: number }>>,
+    floorOffset: number = 0
   ): void {
     const walls: WallSegment[] = [
       { // North wall
-        start: new Vector3(room.x, 0, room.z + room.depth),
-        end: new Vector3(room.x + room.width, 0, room.z + room.depth),
+        start: new Vector3(room.x, floorOffset, room.z + room.depth),
+        end: new Vector3(room.x + room.width, floorOffset, room.z + room.depth),
         roomId: room.id,
         side: 'north',
       },
       { // South wall
-        start: new Vector3(room.x, 0, room.z),
-        end: new Vector3(room.x + room.width, 0, room.z),
+        start: new Vector3(room.x, floorOffset, room.z),
+        end: new Vector3(room.x + room.width, floorOffset, room.z),
         roomId: room.id,
         side: 'south',
       },
       { // East wall
-        start: new Vector3(room.x + room.width, 0, room.z),
-        end: new Vector3(room.x + room.width, 0, room.z + room.depth),
+        start: new Vector3(room.x + room.width, floorOffset, room.z),
+        end: new Vector3(room.x + room.width, floorOffset, room.z + room.depth),
         roomId: room.id,
         side: 'east',
       },
       { // West wall
-        start: new Vector3(room.x, 0, room.z),
-        end: new Vector3(room.x, 0, room.z + room.depth),
+        start: new Vector3(room.x, floorOffset, room.z),
+        end: new Vector3(room.x, floorOffset, room.z + room.depth),
         roomId: room.id,
         side: 'west',
       },
@@ -342,7 +351,7 @@ export class BuildingGenerator {
     this._meshes.push(mesh);
   }
 
-  private _createCeilingTiles(room: RoomConfig, config: BuildingConfig): void {
+  private _createCeilingTiles(room: RoomConfig, config: BuildingConfig, floorOffset: number = 0): void {
     const tileSize = BUILDING.CEILING_TILE_SIZE;
     const tilesX = Math.floor(room.width / tileSize);
     const tilesZ = Math.floor(room.depth / tileSize);
@@ -362,7 +371,7 @@ export class BuildingGenerator {
         );
         tile.position = new Vector3(
           room.x + offsetX + ix * tileSize + tileSize / 2,
-          config.ceilingHeight,
+          floorOffset + config.ceilingHeight,
           room.z + offsetZ + iz * tileSize + tileSize / 2
         );
         tile.material = this._materials.get('ceilingTile')!;
@@ -372,7 +381,7 @@ export class BuildingGenerator {
     }
   }
 
-  private _createRoomLighting(room: RoomConfig, config: BuildingConfig): void {
+  private _createRoomLighting(room: RoomConfig, config: BuildingConfig, floorOffset: number = 0): void {
     // Place point lights simulating fluorescent fixtures
     const lightsX = Math.max(1, Math.floor(room.width / 4));
     const lightsZ = Math.max(1, Math.floor(room.depth / 4));
@@ -383,7 +392,7 @@ export class BuildingGenerator {
           `light_${room.id}_${ix}_${iz}`,
           new Vector3(
             room.x + (ix + 0.5) * (room.width / lightsX),
-            config.ceilingHeight - 0.1,
+            floorOffset + config.ceilingHeight - 0.1,
             room.z + (iz + 0.5) * (room.depth / lightsZ)
           ),
           this._scene
@@ -430,6 +439,47 @@ export class BuildingGenerator {
     this._meshes.push(van);
   }
 
+  private _createElevator(room: RoomConfig, config: BuildingConfig, floorOffset: number): void {
+    // Elevator car visual (interactive box)
+    const elevator = MeshBuilder.CreateBox(
+      `elevator_${room.id}`,
+      { width: room.width * 0.8, height: 2.2, depth: room.depth * 0.8 },
+      this._scene
+    );
+    elevator.position = new Vector3(
+      room.x + room.width / 2,
+      floorOffset + 1.1,
+      room.z + room.depth / 2
+    );
+    const elevMat = new StandardMaterial(`mat_elevator_${room.id}`, this._scene);
+    elevMat.diffuseColor = new Color3(0.5, 0.5, 0.55);
+    elevMat.alpha = 0.3;
+    elevator.material = elevMat;
+    elevator.metadata = {
+      interactive: true,
+      label: 'Elevator',
+      elevatorFloor: room.floor ?? 0,
+    };
+    this._meshes.push(elevator);
+
+    // Elevator doors (visual indicator)
+    const doorFrame = MeshBuilder.CreateBox(
+      `elevator_door_${room.id}`,
+      { width: 0.05, height: 2.0, depth: room.depth * 0.6 },
+      this._scene
+    );
+    doorFrame.position = new Vector3(
+      room.x + room.width - 0.1,
+      floorOffset + 1.0,
+      room.z + room.depth / 2
+    );
+    const doorMat = new StandardMaterial(`mat_elev_door_${room.id}`, this._scene);
+    doorMat.diffuseColor = new Color3(0.6, 0.6, 0.65);
+    doorFrame.material = doorMat;
+    doorFrame.metadata = { interactive: true, label: 'Elevator Doors' };
+    this._meshes.push(doorFrame);
+  }
+
   dispose(): void {
     for (const mesh of this._meshes) {
       mesh.dispose();
@@ -439,6 +489,19 @@ export class BuildingGenerator {
       mat.dispose();
     }
     this._materials.clear();
+  }
+}
+
+/**
+ * Get building config by scenario ID.
+ */
+export function getScenarioConfig(scenarioId: string): BuildingConfig {
+  switch (scenarioId) {
+    case 'courthouse':
+      return getScenario2Config();
+    case 'commercial-office':
+    default:
+      return getScenario1Config();
   }
 }
 
@@ -496,5 +559,83 @@ export function getScenario1Config(): BuildingConfig {
       // Mechanical room to hallway
       { fromRoom: 'mechanical', toRoom: 'hallway1', wallSide: 'west', position: 0.3 },
     ],
+  };
+}
+
+/**
+ * Scenario 2: Durham County Courthouse layout.
+ * Multi-floor building with PTAC/fan coil wall units.
+ * 3 floors with elevator. Portable equipment required (no truck access).
+ */
+export function getScenario2Config(): BuildingConfig {
+  const floors: RoomConfig[] = [];
+  const doors: DoorConfig[] = [];
+
+  // Exterior
+  floors.push({ id: 'exterior', name: 'Parking Lot', x: -15, z: -25, width: 30, depth: 10, type: 'exterior' });
+
+  for (let f = 0; f < 3; f++) {
+    const suffix = `_f${f}`;
+
+    // Lobby / entrance (floor 0 only has exterior entrance)
+    floors.push({
+      id: `lobby${suffix}`, name: `Lobby F${f + 1}`, x: -3, z: -15, width: 6, depth: 4, type: 'lobby', floor: f,
+    });
+
+    // Main hallway
+    floors.push({
+      id: `hallway${suffix}`, name: `Hallway F${f + 1}`, x: -12, z: -11, width: 24, depth: 2, type: 'hallway', floor: f,
+    });
+
+    // Elevator shaft (same position on each floor)
+    floors.push({
+      id: `elevator${suffix}`, name: `Elevator F${f + 1}`, x: -12, z: -15, width: 3, depth: 3, type: 'elevator', floor: f,
+    });
+
+    // Courtrooms (north side) — large rooms
+    floors.push({
+      id: `courtroom1${suffix}`, name: `Courtroom A F${f + 1}`, x: -12, z: -9, width: 8, depth: 7, type: 'courtroom', floor: f,
+    });
+    floors.push({
+      id: `courtroom2${suffix}`, name: `Courtroom B F${f + 1}`, x: 0, z: -9, width: 8, depth: 7, type: 'courtroom', floor: f,
+    });
+
+    // Offices (south side)
+    floors.push({
+      id: `office1${suffix}`, name: `Office F${f + 1}-1`, x: -8, z: -18, width: 5, depth: 5, type: 'office', floor: f,
+    });
+    floors.push({
+      id: `office2${suffix}`, name: `Office F${f + 1}-2`, x: -3, z: -18, width: 5, depth: 5, type: 'office', floor: f,
+    });
+    floors.push({
+      id: `office3${suffix}`, name: `Office F${f + 1}-3`, x: 4, z: -18, width: 5, depth: 5, type: 'office', floor: f,
+    });
+
+    // Restroom
+    floors.push({
+      id: `restroom${suffix}`, name: `Restroom F${f + 1}`, x: 9, z: -18, width: 3, depth: 5, type: 'restroom', floor: f,
+    });
+
+    // Doors
+    // Lobby to hallway
+    doors.push({ fromRoom: `lobby${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'north', position: 0.5 });
+    // Elevator to hallway
+    doors.push({ fromRoom: `elevator${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'east', position: 0.5 });
+    // Courtrooms to hallway
+    doors.push({ fromRoom: `courtroom1${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'south', position: 0.5 });
+    doors.push({ fromRoom: `courtroom2${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'south', position: 0.5 });
+    // Offices to hallway
+    doors.push({ fromRoom: `office1${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'north', position: 0.5 });
+    doors.push({ fromRoom: `office2${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'north', position: 0.5 });
+    doors.push({ fromRoom: `office3${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'north', position: 0.5 });
+    // Restroom to hallway
+    doors.push({ fromRoom: `restroom${suffix}`, toRoom: `hallway${suffix}`, wallSide: 'north', position: 0.5 });
+  }
+
+  return {
+    wallHeight: BUILDING.WALL_HEIGHT,
+    ceilingHeight: BUILDING.CEILING_HEIGHT,
+    rooms: floors,
+    doors,
   };
 }
