@@ -1,6 +1,6 @@
 import { Engine, Scene, Vector3, HemisphericLight, Color4, KeyboardEventTypes } from '@babylonjs/core'
 import { AdvancedDynamicTexture } from '@babylonjs/gui'
-import { PHYSICS, COLORS } from './utils/constants'
+import { PHYSICS, COLORS, BUILDING } from './utils/constants'
 import { PlayerController } from './systems/PlayerController'
 import { GameState, GamePhase } from './systems/GameState'
 import { BuildingGenerator, getScenario1Config } from './models/BuildingGenerator'
@@ -15,6 +15,10 @@ import { HUD } from './ui/HUD'
 import { EquipmentSelect } from './ui/EquipmentSelect'
 import { PhaseOverlay } from './ui/PhaseOverlay'
 import { ScoreCard } from './ui/ScoreCard'
+import { AudioManager } from './utils/audio'
+import { TutorialSystem } from './systems/TutorialSystem'
+import { MainMenu } from './scenes/MainMenu'
+import { ProblemSystem } from './systems/ProblemSystem'
 
 // --- Engine & Scene ---
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
@@ -62,8 +66,8 @@ const pressureWashSystem = new PressureWashSystem(scene)
 pressureWashSystem.init()
 
 // --- Problem Injection System ---
-const problemSystem = new ProblemInjectionSystem(scene)
-problemSystem.init()
+const problemInjection = new ProblemInjectionSystem(scene)
+problemInjection.init()
 
 // --- Duct Cross-Section (2D cleaning view) ---
 const ductCrossSection = new DuctCrossSection(scene)
@@ -75,6 +79,48 @@ const hud = new HUD(ui, gameState, equipSystem)
 const equipSelect = new EquipmentSelect(ui, equipSystem)
 const phaseOverlay = new PhaseOverlay(ui)
 const scoreCard = new ScoreCard(ui)
+
+// Problem injection system
+const problemSystem = new ProblemSystem(scene, ui, gameState)
+problemSystem.initProblems(3)
+
+// Problem event feedback → HUD
+problemSystem.onProblemEvent.add((event) => {
+  if (event.type === 'triggered') {
+    hud.showMessage(`PROBLEM: ${event.message}`, 5000)
+    audio.playSound('alert_problem')
+  } else if (event.type === 'resolved_correct') {
+    hud.showMessage(event.message, 4000)
+    audio.playSound('alert_success')
+  } else if (event.type === 'resolved_incorrect') {
+    hud.showMessage(event.message, 4000)
+    audio.playSound('alert_error')
+  }
+  hud._updateTasks()
+})
+
+// Tutorial system
+const tutorial = new TutorialSystem(scene, ui, gameState)
+
+// Main menu
+const mainMenu = new MainMenu(scene, ui)
+mainMenu.show((options) => {
+  if (options.tutorialEnabled) {
+    tutorial.start()
+  }
+})
+
+// --- Audio ---
+const audio = new AudioManager(scene)
+
+// Start ambient on first user interaction (browser autoplay policy)
+const startAudioOnce = () => {
+  audio.startAmbient()
+  document.removeEventListener('click', startAudioOnce)
+  document.removeEventListener('keydown', startAudioOnce)
+}
+document.addEventListener('click', startAudioOnce)
+document.addEventListener('keydown', startAudioOnce)
 
 // --- Show initial phase overlay ---
 phaseOverlay.show(GamePhase.PRE_JOB)
@@ -94,21 +140,21 @@ function isOverlayBlocking(): boolean {
     || ductCrossSection.isActive
     || patchingSystem.isPatchUIOpen
     || pressureWashSystem.isWashUIOpen
-    || problemSystem.isProblemUIOpen
+    || problemInjection.isProblemUIOpen
 }
 
 // --- Keyboard: tool switching, phase advance, etc. ---
 scene.onKeyboardObservable.add((kbInfo) => {
   if (kbInfo.type !== KeyboardEventTypes.KEYDOWN) return
 
-  // ESC closes scorecard
-  if (kbInfo.event.key === 'Escape' && scoreCard.isVisible) {
-    scoreCard.hide()
+  // Don't process game keys when overlays are open
+  if (mainMenu.isVisible || isOverlayBlocking() || problemSystem.isDialogueVisible) {
+    // ESC closes scorecard
+    if (kbInfo.event.key === 'Escape' && scoreCard.isVisible) {
+      scoreCard.hide()
+    }
     return
   }
-
-  // Don't process game keys when overlays are open
-  if (isOverlayBlocking()) return
 
   const key = kbInfo.event.key
 
@@ -131,6 +177,12 @@ scene.onKeyboardObservable.add((kbInfo) => {
     hud.updateInventoryDisplay()
   }
 
+  // M: toggle mute
+  if (key === 'm' || key === 'M') {
+    const muted = audio.toggleMute()
+    hud.showMessage(muted ? 'Audio muted' : 'Audio unmuted')
+  }
+
   // F: toggle airflow arrows
   if (key === 'f' || key === 'F') {
     if (hvacSystem.ductNetwork.airflowVisible) {
@@ -145,7 +197,7 @@ scene.onKeyboardObservable.add((kbInfo) => {
   // N: advance to next phase
   if (key === 'n' || key === 'N') {
     // Block phase advance during stop work
-    if (problemSystem.isStopWorkActive) {
+    if (problemInjection.isStopWorkActive) {
       hud.showMessage('STOP WORK is active! Resolve hazard first!')
       return
     }
@@ -195,6 +247,7 @@ scene.onKeyboardObservable.add((kbInfo) => {
 
       if (gameState.transitionTo(nextPhase)) {
         phaseOverlay.show(nextPhase)
+        audio.playSound('alert_phase')
         hud.showMessage(`Entering: ${nextPhase.replace('_', ' ')}`)
 
         if (nextPhase === GamePhase.SCORED) {
@@ -217,10 +270,10 @@ player.onInteract.add((mesh) => {
   const name = mesh.name
 
   // Block interactions during stop work (except problem resolution)
-  if (problemSystem.isStopWorkActive) {
+  if (problemInjection.isStopWorkActive) {
     const problemId = mesh.metadata?.problemId as string | undefined
     if (problemId) {
-      problemSystem.handleProblemInteraction(mesh, equipSystem.activeToolId)
+      problemInjection.handleProblemInteraction(mesh, equipSystem.activeToolId)
       return
     }
     hud.showMessage('STOP WORK is active! Resolve hazard first!')
@@ -229,7 +282,7 @@ player.onInteract.add((mesh) => {
 
   // Check for problem indicators first
   if (mesh.metadata?.problemId) {
-    if (problemSystem.handleProblemInteraction(mesh, equipSystem.activeToolId)) {
+    if (problemInjection.handleProblemInteraction(mesh, equipSystem.activeToolId)) {
       return
     }
   }
@@ -295,7 +348,7 @@ player.onInteract.add((mesh) => {
   // Electrical panel
   if (name.startsWith('panel_')) {
     if (mesh.metadata?.problemId) {
-      problemSystem.handleProblemInteraction(mesh, equipSystem.activeToolId)
+      problemInjection.handleProblemInteraction(mesh, equipSystem.activeToolId)
     } else {
       hud.showMessage('Electrical panel - no issues.')
     }
@@ -356,6 +409,31 @@ player.onInteract.add((mesh) => {
 
   // General HVAC interactions (air handler, coils, filter)
   if (hvacSystem.handleInteraction(mesh, equipSystem.activeToolId)) {
+    return
+  }
+
+  // Problem-related mesh interaction
+  if (name.startsWith('problem_')) {
+    if (problemSystem.handleInteraction(name)) return
+  }
+
+  // PTAC unit interaction — count as air handler found
+  if (name.startsWith('ptac_unit_')) {
+    gameState.completeTask('find-air-handler')
+    gameState.completeTask('identify-system')
+    hud._updateTasks()
+    hud.showMessage('PTAC unit found — Fan coil system identified')
+    return
+  }
+
+  // Elevator interaction — teleport between floors
+  if (name.startsWith('elevator_')) {
+    const currentFloor = mesh.metadata?.elevatorFloor as number ?? 0;
+    const targetFloor = (currentFloor + 1) % 3;
+    const floorY = targetFloor * BUILDING.WALL_HEIGHT + PHYSICS.PLAYER_HEIGHT
+    player.teleport(new Vector3(player.camera.position.x, floorY, player.camera.position.z))
+    hud.showMessage(`Elevator: moved to floor ${targetFloor + 1}`)
+    audio.playSound('alert_phase')
     return
   }
 
@@ -496,8 +574,8 @@ pressureWashSystem.onWashEvent.add((event) => {
   hud._updateTasks()
 })
 
-// --- Problem System Events ---
-problemSystem.onProblemEvent.add((event) => {
+// --- Problem Injection Events ---
+problemInjection.onProblemEvent.add((event) => {
   if (event.type === 'stop_work') {
     hud.showMessage(event.message, 10000) // Show longer for critical alerts
   } else {
@@ -506,10 +584,19 @@ problemSystem.onProblemEvent.add((event) => {
   hud._updateTasks()
 })
 
-// HVAC interaction feedback → HUD messages
+// HVAC interaction feedback → HUD messages + audio
 hvacSystem.onInteraction.add((event) => {
   hud.showMessage(event.message)
   hud._updateTasks()
+  // Play contextual sounds
+  if (event.type === 'duct_inspect' && event.success) {
+    audio.playSound('wand_blast')
+    audio.playSound('debris_rattle')
+  } else if (event.type === 'coil_clean' && event.success) {
+    audio.playSound('pressure_washer')
+  } else if (event.type === 'register_remove' || event.type === 'register_reinstall') {
+    audio.playSound('screw_gun')
+  }
 })
 
 // Equipment change feedback
@@ -561,9 +648,23 @@ scene.registerBeforeRender(() => {
 })
 
 // --- Render Loop ---
+let lastTime = performance.now()
 engine.runRenderLoop(() => {
+  const now = performance.now()
+  const dt = (now - lastTime) / 1000
+  lastTime = now
+
   scene.render()
   hud.updateTimer()
+
+  // Problem system check
+  problemSystem.update(dt)
+
+  // Footstep audio based on camera movement
+  const cam = player.camera
+  const velocity = cam.cameraDirection
+  const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z)
+  audio.updateFootsteps(dt, speed > 0.001 && player.isPointerLocked)
 })
 
 window.addEventListener('resize', () => engine.resize())

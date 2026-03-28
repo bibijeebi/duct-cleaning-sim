@@ -231,6 +231,19 @@ export class GameState {
   }
 
   /**
+   * Get tasks for a given scenario ID.
+   */
+  static getScenarioTasks(scenarioId: string): GameTask[] {
+    switch (scenarioId) {
+      case 'courthouse':
+        return GameState.getScenario2Tasks();
+      case 'commercial-office':
+      default:
+        return GameState.getScenario1Tasks();
+    }
+  }
+
+  /**
    * Get the default task list for Scenario 1 (Commercial Office).
    */
   static getScenario1Tasks(): GameTask[] {
@@ -269,6 +282,48 @@ export class GameState {
       { id: 'sweep-debris', phase: GamePhase.CLEANUP, description: 'Sweep/dustpan all debris', completed: false, required: true },
       { id: 'pack-equipment', phase: GamePhase.CLEANUP, description: 'Pack all equipment', completed: false, required: true },
       { id: 'final-walkthrough', phase: GamePhase.CLEANUP, description: 'Final walkthrough inspection', completed: false, required: true },
+    ];
+  }
+
+  /**
+   * Get the task list for Scenario 2 (Durham County Courthouse).
+   */
+  static getScenario2Tasks(): GameTask[] {
+    return [
+      // PRE_JOB
+      { id: 'read-ticket', phase: GamePhase.PRE_JOB, description: 'Read job ticket', completed: false, required: true },
+      { id: 'select-equipment', phase: GamePhase.PRE_JOB, description: 'Select equipment (portable only!)', completed: false, required: true },
+      { id: 'vehicle-check', phase: GamePhase.PRE_JOB, description: 'Perform vehicle check', completed: false, required: false },
+
+      // ARRIVAL
+      { id: 'enter-building', phase: GamePhase.ARRIVAL, description: 'Enter courthouse', completed: false, required: true },
+      { id: 'find-air-handler', phase: GamePhase.ARRIVAL, description: 'Find PTAC units on each floor', completed: false, required: true },
+      { id: 'identify-system', phase: GamePhase.ARRIVAL, description: 'Identify PTAC/fan coil system type', completed: false, required: true },
+      { id: 'count-registers', phase: GamePhase.ARRIVAL, description: 'Count registers across all floors', completed: false, required: true },
+      { id: 'lay-plastic', phase: GamePhase.ARRIVAL, description: 'Lay plastic sheeting on all floors', completed: false, required: true },
+
+      // SETUP
+      { id: 'connect-tubing', phase: GamePhase.SETUP, description: 'Set up portable negative air machine', completed: false, required: true },
+      { id: 'run-compressor', phase: GamePhase.SETUP, description: 'Run portable compressor for wand', completed: false, required: true },
+      { id: 'position-vacuums', phase: GamePhase.SETUP, description: 'Position portable vacuums per floor', completed: false, required: true },
+
+      // EXECUTION
+      { id: 'clean-returns', phase: GamePhase.EXECUTION, description: 'Clean return ducts first (all floors)', completed: false, required: true },
+      { id: 'clean-supply', phase: GamePhase.EXECUTION, description: 'Clean supply ducts (all floors)', completed: false, required: true },
+      { id: 'cut-access', phase: GamePhase.EXECUTION, description: 'Cut access holes as needed', completed: false, required: false },
+
+      // COMPLETION
+      { id: 'patch-holes', phase: GamePhase.COMPLETION, description: 'Patch all access holes to code', completed: false, required: true },
+      { id: 'pressure-wash', phase: GamePhase.COMPLETION, description: 'Pressure wash grills/registers', completed: false, required: true },
+      { id: 'clean-coils', phase: GamePhase.COMPLETION, description: 'Clean coils in PTAC units', completed: false, required: true },
+      { id: 'replace-filters', phase: GamePhase.COMPLETION, description: 'Replace filters in PTAC units', completed: false, required: true },
+      { id: 'reinstall-registers', phase: GamePhase.COMPLETION, description: 'Reinstall all registers/grills', completed: false, required: true },
+
+      // CLEANUP
+      { id: 'pull-plastic', phase: GamePhase.CLEANUP, description: 'Pull plastic sheeting (all floors)', completed: false, required: true },
+      { id: 'sweep-debris', phase: GamePhase.CLEANUP, description: 'Sweep all floors', completed: false, required: true },
+      { id: 'pack-equipment', phase: GamePhase.CLEANUP, description: 'Pack equipment back to van', completed: false, required: true },
+      { id: 'final-walkthrough', phase: GamePhase.CLEANUP, description: 'Final walkthrough all floors', completed: false, required: true },
     ];
   }
 }

@@ -135,11 +135,183 @@ export class DuctNetwork {
   }
 
   /**
+   * Generate HVAC system based on system type.
+   */
+  generate(config: BuildingConfig, ductMaterial: DuctMaterial = 'rigid', systemType: string = 'split'): void {
+    if (systemType === 'ptac') {
+      this._generatePTAC(config, ductMaterial);
+      return;
+    }
+    this._generateSplitSystem(config, ductMaterial);
+  }
+
+  /**
+   * Generate PTAC/fan coil wall units for courthouse scenario.
+   * Each room gets its own wall-mounted unit with short duct runs.
+   */
+  private _generatePTAC(config: BuildingConfig, ductMaterial: DuctMaterial): void {
+    const rooms = config.rooms.filter(r =>
+      r.type === 'office' || r.type === 'courtroom' || r.type === 'lobby'
+    );
+
+    let supplyCount = 0;
+    let returnCount = 0;
+
+    for (const room of rooms) {
+      const floorOffset = (room.floor ?? 0) * config.wallHeight;
+      const unitY = floorOffset + 2.0; // Wall-mounted near ceiling
+
+      // PTAC unit on the wall (acts as mini air handler)
+      const ptac = MeshBuilder.CreateBox(`ptac_unit_${room.id}`, {
+        width: 1.0, height: 0.5, depth: 0.4,
+      }, this._scene);
+      ptac.position = new Vector3(
+        room.x + room.width - 0.2,
+        unitY,
+        room.z + room.depth / 2,
+      );
+      const ptacMat = new StandardMaterial(`mat_ptac_${room.id}`, this._scene);
+      ptacMat.diffuseColor = COLORS.AIR_HANDLER;
+      ptac.material = ptacMat;
+      ptac.metadata = { interactive: true, label: `PTAC Unit - ${room.name}` };
+      ptac.checkCollisions = true;
+      this._meshes.push(ptac);
+
+      // Short supply duct run from PTAC to room center
+      const ductY = floorOffset + config.ceilingHeight + 0.15;
+      const ductLen = room.width * 0.6;
+      const ductMesh = MeshBuilder.CreateBox(`duct_ptac_supply_${room.id}`, {
+        width: ductLen,
+        height: BUILDING.DUCT_BRANCH_HEIGHT,
+        depth: BUILDING.DUCT_BRANCH_WIDTH,
+      }, this._scene);
+      ductMesh.position = new Vector3(
+        room.x + room.width / 2,
+        ductY,
+        room.z + room.depth / 2,
+      );
+      ductMesh.material = this._getDuctMaterial(ductMaterial, 0.5 + Math.random() * 0.3);
+      ductMesh.metadata = {
+        interactive: true,
+        label: `Supply Duct - ${room.name}`,
+        ductType: 'supply',
+        material: ductMaterial,
+      };
+      this._meshes.push(ductMesh);
+
+      this.sections.push({
+        id: `ptac_supply_${room.id}`,
+        material: ductMaterial,
+        debrisLevel: 0.4 + Math.random() * 0.4,
+        cleaned: false,
+        type: 'supply',
+        mesh: ductMesh,
+        startPos: new Vector3(room.x + room.width - 0.5, ductY, room.z + room.depth / 2),
+        endPos: new Vector3(room.x + room.width * 0.3, ductY, room.z + room.depth / 2),
+        roomId: room.id,
+      });
+
+      // Supply register
+      const supplyPos = new Vector3(
+        room.x + room.width * 0.4,
+        floorOffset + config.ceilingHeight - 0.01,
+        room.z + room.depth / 2,
+      );
+      const supplyReg = this._createRegisterMesh(
+        `register_supply_${supplyCount}`, supplyPos, 'supply',
+      );
+      this.registers.push({
+        id: `supply_${supplyCount}`,
+        type: 'supply',
+        mesh: supplyReg,
+        roomId: room.id,
+        position: supplyPos,
+        installed: true,
+        identified: false,
+        cleaned: false,
+      });
+      supplyCount++;
+
+      // Return grill (near PTAC unit)
+      const returnPos = new Vector3(
+        room.x + room.width * 0.7,
+        floorOffset + config.ceilingHeight - 0.01,
+        room.z + room.depth / 2,
+      );
+      const returnReg = this._createRegisterMesh(
+        `grill_return_${returnCount}`, returnPos, 'return',
+      );
+      this.registers.push({
+        id: `return_${returnCount}`,
+        type: 'return',
+        mesh: returnReg,
+        roomId: room.id,
+        position: returnPos,
+        installed: true,
+        identified: false,
+        cleaned: false,
+      });
+
+      // Short return duct
+      const retDuctMesh = MeshBuilder.CreateBox(`duct_ptac_return_${room.id}`, {
+        width: room.width * 0.3,
+        height: BUILDING.DUCT_BRANCH_HEIGHT * 0.9,
+        depth: BUILDING.DUCT_BRANCH_WIDTH * 1.1,
+      }, this._scene);
+      retDuctMesh.position = new Vector3(
+        room.x + room.width * 0.75,
+        ductY,
+        room.z + room.depth / 2,
+      );
+      retDuctMesh.material = this._getDuctMaterial(ductMaterial, 0.6 + Math.random() * 0.2);
+      retDuctMesh.metadata = {
+        interactive: true,
+        label: `Return Duct - ${room.name}`,
+        ductType: 'return',
+        material: ductMaterial,
+      };
+      this._meshes.push(retDuctMesh);
+
+      this.sections.push({
+        id: `ptac_return_${room.id}`,
+        material: ductMaterial,
+        debrisLevel: 0.5 + Math.random() * 0.35,
+        cleaned: false,
+        type: 'return',
+        mesh: retDuctMesh,
+        startPos: new Vector3(room.x + room.width * 0.6, ductY, room.z + room.depth / 2),
+        endPos: new Vector3(room.x + room.width - 0.3, ductY, room.z + room.depth / 2),
+        roomId: room.id,
+      });
+
+      returnCount++;
+    }
+
+    // Create a pseudo air handler entry for the first PTAC unit (for task compatibility)
+    const firstRoom = rooms[0];
+    if (firstRoom) {
+      const floorOffset = (firstRoom.floor ?? 0) * config.wallHeight;
+      this.airHandler.position = new Vector3(
+        firstRoom.x + firstRoom.width - 0.2,
+        floorOffset + 2.0,
+        firstRoom.z + firstRoom.depth / 2,
+      );
+      // PTAC units serve as individual air handlers - use existing PTAC mesh
+      const ptacMesh = this._meshes.find(m => m.name === `ptac_unit_${firstRoom.id}`);
+      if (ptacMesh) {
+        this.airHandler.bodyMesh = ptacMesh as Mesh;
+      }
+      // Mark coils and filter as accessible via any PTAC interaction
+      this.airHandler.doorOpen = true;
+    }
+  }
+
+  /**
    * Generate the full HVAC system for Scenario 1 (commercial office).
    * Air handler in mechanical room, trunk running east-west above ceiling,
    * branches to each office, supply registers in rooms, return grills in hallway/lobby.
    */
-  generate(config: BuildingConfig, ductMaterial: DuctMaterial = 'rigid'): void {
+  private _generateSplitSystem(config: BuildingConfig, ductMaterial: DuctMaterial): void {
     const mechRoom = config.rooms.find(r => r.type === 'mechanical');
     if (!mechRoom) return;
 
