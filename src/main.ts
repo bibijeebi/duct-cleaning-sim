@@ -10,6 +10,7 @@ import { HUD } from './ui/HUD'
 import { EquipmentSelect } from './ui/EquipmentSelect'
 import { PhaseOverlay } from './ui/PhaseOverlay'
 import { ScoreCard } from './ui/ScoreCard'
+import { AudioManager } from './utils/audio'
 
 // --- Engine & Scene ---
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
@@ -61,6 +62,18 @@ const phaseOverlay = new PhaseOverlay(ui)
 // End-of-job scorecard
 const scoreCard = new ScoreCard(ui)
 
+// --- Audio ---
+const audio = new AudioManager(scene)
+
+// Start ambient on first user interaction (browser autoplay policy)
+const startAudioOnce = () => {
+  audio.startAmbient()
+  document.removeEventListener('click', startAudioOnce)
+  document.removeEventListener('keydown', startAudioOnce)
+}
+document.addEventListener('click', startAudioOnce)
+document.addEventListener('keydown', startAudioOnce)
+
 // --- Show initial phase overlay ---
 phaseOverlay.show(GamePhase.PRE_JOB)
 
@@ -97,6 +110,12 @@ scene.onKeyboardObservable.add((kbInfo) => {
     hud.updateInventoryDisplay()
   }
 
+  // M: toggle mute
+  if (key === 'm' || key === 'M') {
+    const muted = audio.toggleMute()
+    hud.showMessage(muted ? 'Audio muted' : 'Audio unmuted')
+  }
+
   // F: toggle airflow arrows
   if (key === 'f' || key === 'F') {
     if (hvacSystem.ductNetwork.airflowVisible) {
@@ -119,6 +138,7 @@ scene.onKeyboardObservable.add((kbInfo) => {
       const nextPhase = phases[currentIdx + 1]
       if (gameState.transitionTo(nextPhase)) {
         phaseOverlay.show(nextPhase)
+        audio.playSound('alert_phase')
         hud.showMessage(`Entering: ${nextPhase.replace('_', ' ')}`)
 
         if (nextPhase === GamePhase.SCORED) {
@@ -193,10 +213,19 @@ player.onInteract.add((mesh) => {
   }
 })
 
-// HVAC interaction feedback → HUD messages
+// HVAC interaction feedback → HUD messages + audio
 hvacSystem.onInteraction.add((event) => {
   hud.showMessage(event.message)
   hud._updateTasks()
+  // Play contextual sounds
+  if (event.type === 'duct_inspect' && event.success) {
+    audio.playSound('wand_blast')
+    audio.playSound('debris_rattle')
+  } else if (event.type === 'coil_clean' && event.success) {
+    audio.playSound('pressure_washer')
+  } else if (event.type === 'register_remove' || event.type === 'register_reinstall') {
+    audio.playSound('screw_gun')
+  }
 })
 
 // Equipment change feedback
@@ -217,9 +246,20 @@ scene.registerBeforeRender(() => {
 })
 
 // --- Render Loop ---
+let lastTime = performance.now()
 engine.runRenderLoop(() => {
+  const now = performance.now()
+  const dt = (now - lastTime) / 1000
+  lastTime = now
+
   scene.render()
   hud.updateTimer()
+
+  // Footstep audio based on camera movement
+  const cam = player.camera
+  const velocity = cam.cameraDirection
+  const speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z)
+  audio.updateFootsteps(dt, speed > 0.001 && player.isPointerLocked)
 })
 
 window.addEventListener('resize', () => engine.resize())
