@@ -1,10 +1,17 @@
-import { Engine, Scene, Vector3, HemisphericLight, Color4 } from '@babylonjs/core'
-import { AdvancedDynamicTexture, TextBlock } from '@babylonjs/gui'
-import { PHYSICS, COLORS, UI } from './utils/constants'
+import { Engine, Scene, Vector3, HemisphericLight, Color4, KeyboardEventTypes } from '@babylonjs/core'
+import { AdvancedDynamicTexture } from '@babylonjs/gui'
+import { PHYSICS, COLORS } from './utils/constants'
 import { PlayerController } from './systems/PlayerController'
 import { GameState, GamePhase } from './systems/GameState'
 import { BuildingGenerator, getScenario1Config } from './models/BuildingGenerator'
+import { HVACSystem } from './systems/HVACSystem'
+import { EquipmentSystem } from './systems/EquipmentSystem'
+import { HUD } from './ui/HUD'
+import { EquipmentSelect } from './ui/EquipmentSelect'
+import { PhaseOverlay } from './ui/PhaseOverlay'
+import { ScoreCard } from './ui/ScoreCard'
 
+// --- Engine & Scene ---
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true })
 
@@ -13,141 +20,206 @@ scene.clearColor = new Color4(0.1, 0.1, 0.12, 1.0)
 scene.gravity = new Vector3(0, PHYSICS.GRAVITY, 0)
 scene.collisionsEnabled = true
 
-// Ambient light
 const light = new HemisphericLight('ambient', new Vector3(0, 1, 0), scene)
 light.intensity = 0.3
 
-// Generate the building
+// --- Building ---
+const buildingConfig = getScenario1Config()
 const building = new BuildingGenerator(scene)
-building.generate(getScenario1Config())
+building.generate(buildingConfig)
 
-// Player controller (creates camera, crosshair, pointer lock, raycasting)
+// --- Player ---
 const player = new PlayerController(scene, canvas)
-player.teleport(new Vector3(0, PHYSICS.PLAYER_HEIGHT, -15)) // Start in parking lot
+player.teleport(new Vector3(0, PHYSICS.PLAYER_HEIGHT, -15))
 
-// Title overlay
-const titleUI = AdvancedDynamicTexture.CreateFullscreenUI('titleUI')
-const title = new TextBlock('title')
-title.text = 'DUCT CLEANING SIMULATOR'
-title.color = COLORS.TEXT_PRIMARY
-title.fontSize = UI.TITLE_FONT_SIZE
-title.fontFamily = UI.FONT_FAMILY
-title.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP
-title.paddingTop = '20px'
-titleUI.addControl(title)
-
-// Phase display
-const phaseText = new TextBlock('phaseText')
-phaseText.text = 'Phase: PRE-JOB'
-phaseText.color = COLORS.TEXT_SECONDARY
-phaseText.fontSize = UI.HUD_FONT_SIZE
-phaseText.fontFamily = UI.FONT_FAMILY
-phaseText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP
-phaseText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT
-phaseText.paddingTop = '20px'
-phaseText.paddingLeft = '20px'
-titleUI.addControl(phaseText)
-
-// Score display
-const scoreText = new TextBlock('scoreText')
-scoreText.text = 'Score: 100'
-scoreText.color = COLORS.TEXT_PRIMARY
-scoreText.fontSize = UI.HUD_FONT_SIZE
-scoreText.fontFamily = UI.FONT_FAMILY
-scoreText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP
-scoreText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_RIGHT
-scoreText.paddingTop = '20px'
-scoreText.paddingRight = '20px'
-titleUI.addControl(scoreText)
-
-// Task list display
-const taskText = new TextBlock('taskText')
-taskText.text = ''
-taskText.color = COLORS.TEXT_SECONDARY
-taskText.fontSize = 12
-taskText.fontFamily = UI.FONT_FAMILY
-taskText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP
-taskText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_RIGHT
-taskText.textWrapping = true
-taskText.width = '300px'
-taskText.paddingTop = '50px'
-taskText.paddingRight = '20px'
-titleUI.addControl(taskText)
-
-// Initialize game state
+// --- Game State ---
 const gameState = GameState.getInstance()
 gameState.initTasks(GameState.getScenario1Tasks())
 gameState.startTimer()
 
-// Update task list UI
-function updateTaskDisplay(): void {
-  const tasks = gameState.currentPhaseTasks
-  const lines = tasks.map(t => `${t.completed ? '[x]' : '[ ]'} ${t.description}`)
-  taskText.text = lines.join('\n')
-}
+// --- HVAC System ---
+const hvacSystem = new HVACSystem(scene)
+hvacSystem.init(buildingConfig, 'rigid')
 
-// Listen for game state changes
-gameState.onPhaseChange.add((phase: GamePhase) => {
-  phaseText.text = `Phase: ${phase.replace('_', '-')}`
-  updateTaskDisplay()
+// --- Equipment System ---
+const equipSystem = new EquipmentSystem(scene)
+// Place equipment items near the van (exterior parking area center)
+equipSystem.createVanEquipment(new Vector3(0, 0, -15))
+
+// --- UI Layer ---
+const ui = AdvancedDynamicTexture.CreateFullscreenUI('gameUI')
+
+// HUD (replaces the old inline UI elements)
+const hud = new HUD(ui, gameState, equipSystem)
+
+// Equipment Select overlay
+const equipSelect = new EquipmentSelect(ui, equipSystem)
+
+// Phase transition overlay
+const phaseOverlay = new PhaseOverlay(ui)
+
+// End-of-job scorecard
+const scoreCard = new ScoreCard(ui)
+
+// --- Show initial phase overlay ---
+phaseOverlay.show(GamePhase.PRE_JOB)
+
+// --- Keyboard: tool switching (1-4), Q to drop, Tab to cycle, F for airflow ---
+scene.onKeyboardObservable.add((kbInfo) => {
+  if (kbInfo.type !== KeyboardEventTypes.KEYDOWN) return
+  // Don't process game keys when overlays are open
+  if (equipSelect.isVisible || phaseOverlay.isVisible || scoreCard.isVisible) {
+    // ESC closes scorecard
+    if (kbInfo.event.key === 'Escape' && scoreCard.isVisible) {
+      scoreCard.hide()
+    }
+    return
+  }
+
+  const key = kbInfo.event.key
+
+  // Tool slots 1-4
+  if (key >= '1' && key <= '4') {
+    equipSystem.switchToSlot(parseInt(key) - 1)
+    hud.updateInventoryDisplay()
+  }
+
+  // Tab: cycle tools
+  if (key === 'Tab') {
+    kbInfo.event.preventDefault()
+    equipSystem.cycleNext()
+    hud.updateInventoryDisplay()
+  }
+
+  // Q: drop current tool
+  if (key === 'q' || key === 'Q') {
+    equipSystem.dropCurrent()
+    hud.updateInventoryDisplay()
+  }
+
+  // F: toggle airflow arrows
+  if (key === 'f' || key === 'F') {
+    if (hvacSystem.ductNetwork.airflowVisible) {
+      hvacSystem.hideAirflow()
+      hud.showMessage('Airflow arrows hidden')
+    } else {
+      hvacSystem.showAirflow()
+      hud.showMessage('Airflow direction shown')
+    }
+  }
+
+  // N: advance to next phase
+  if (key === 'n' || key === 'N') {
+    const phases = [
+      GamePhase.PRE_JOB, GamePhase.ARRIVAL, GamePhase.SETUP,
+      GamePhase.EXECUTION, GamePhase.COMPLETION, GamePhase.CLEANUP, GamePhase.SCORED,
+    ]
+    const currentIdx = phases.indexOf(gameState.currentPhase)
+    if (currentIdx < phases.length - 1) {
+      const nextPhase = phases[currentIdx + 1]
+      if (gameState.transitionTo(nextPhase)) {
+        phaseOverlay.show(nextPhase)
+        hud.showMessage(`Entering: ${nextPhase.replace('_', ' ')}`)
+
+        if (nextPhase === GamePhase.SCORED) {
+          gameState.stopTimer()
+          scoreCard.show()
+        }
+      } else {
+        hud.showMessage('Complete required tasks before advancing')
+      }
+    }
+  }
 })
 
-gameState.onScoreChange.add((score: number) => {
-  scoreText.text = `Score: ${score}`
-})
-
-gameState.onTaskComplete.add(() => {
-  updateTaskDisplay()
-})
-
-// Handle interactions
+// --- Interactions ---
 player.onInteract.add((mesh) => {
   const name = mesh.name
 
-  // Van interaction — mark equipment selected
+  // Equipment near van: toggle loadout or pick up
+  if (name.startsWith('equipment_')) {
+    if (gameState.currentPhase === GamePhase.PRE_JOB) {
+      // In pre-job, toggle loadout selection
+      equipSystem.handleEquipmentInteraction(mesh)
+      const equipId = mesh.metadata?.equipmentId as string
+      const isIn = equipSystem.isInLoadout(equipId)
+      hud.showMessage(`${mesh.metadata?.label}: ${isIn ? 'SELECTED' : 'REMOVED'}`)
+    } else {
+      // After pre-job, pick up into inventory
+      const equipId = mesh.metadata?.equipmentId as string
+      if (equipSystem.pickUp(equipId)) {
+        hud.showMessage(`Picked up: ${mesh.metadata?.label}`)
+        hud.updateInventoryDisplay()
+      } else {
+        hud.showMessage('Hands full! Drop something first (Q)')
+      }
+    }
+    return
+  }
+
+  // Van interaction — open equipment select screen in PRE_JOB
   if (name.startsWith('van_')) {
-    gameState.completeTask('select-equipment')
-    gameState.completeTask('vehicle-check')
-    gameState.completeTask('read-ticket')
-    updateTaskDisplay()
+    if (gameState.currentPhase === GamePhase.PRE_JOB) {
+      equipSelect.show(() => {
+        hud.showMessage('Loadout confirmed!')
+        gameState.completeTask('read-ticket')
+        gameState.completeTask('vehicle-check')
+        hud._updateTasks()
+      })
+    }
+    return
   }
 
   // Ceiling tile removal
   if (name.startsWith('ceiling_tile_') && mesh.metadata?.removable) {
     mesh.isVisible = false
     mesh.checkCollisions = false
+    hud.showMessage('Ceiling tile removed')
+    return
   }
 
-  // Air handler interaction
+  // HVAC interactions (air handler, registers, ducts, coils, filter)
+  if (hvacSystem.handleInteraction(mesh, equipSystem.activeToolId)) {
+    return
+  }
+
+  // Air handler body — also complete tasks
   if (name.startsWith('air_handler')) {
     gameState.completeTask('find-air-handler')
     gameState.completeTask('identify-system')
-    updateTaskDisplay()
+    hud._updateTasks()
+    hud.showMessage('Air handler found — Split system identified')
+    return
   }
 })
 
-// Initial task display
-updateTaskDisplay()
+// HVAC interaction feedback → HUD messages
+hvacSystem.onInteraction.add((event) => {
+  hud.showMessage(event.message)
+  hud._updateTasks()
+})
 
-// Timer display
-const timerText = new TextBlock('timerText')
-timerText.text = '00:00'
-timerText.color = COLORS.TEXT_SECONDARY
-timerText.fontSize = UI.HUD_FONT_SIZE
-timerText.fontFamily = UI.FONT_FAMILY
-timerText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP
-timerText.paddingTop = '45px'
-titleUI.addControl(timerText)
+// Equipment change feedback
+equipSystem.onEquipmentChange.add((event) => {
+  hud.showMessage(event.message)
+})
 
-// Render loop
+// Sync HUD crosshair with player controller raycast target
+scene.registerBeforeRender(() => {
+  const target = player.currentTarget
+  if (target) {
+    hud.setCrosshairActive(true)
+    hud.showPrompt(`Press E to interact [${target.mesh.metadata?.label || target.mesh.name}]`)
+  } else {
+    hud.setCrosshairActive(false)
+    hud.hidePrompt()
+  }
+})
+
+// --- Render Loop ---
 engine.runRenderLoop(() => {
   scene.render()
-
-  // Update timer
-  const secs = gameState.elapsedSeconds
-  const mins = Math.floor(secs / 60)
-  const s = secs % 60
-  timerText.text = `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  hud.updateTimer()
 })
 
 window.addEventListener('resize', () => engine.resize())
