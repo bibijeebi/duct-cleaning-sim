@@ -181,6 +181,7 @@ export class PlayerController {
       name.startsWith('van_') ||
       name.startsWith('ptac_') ||
       name.startsWith('elevator_') ||
+      name.startsWith('problem_') ||
       name.startsWith('ceiling_tile_') ||
       name.startsWith('door_') ||
       name.startsWith('panel_') ||

@@ -13,6 +13,7 @@ import { ScoreCard } from './ui/ScoreCard'
 import { AudioManager } from './utils/audio'
 import { TutorialSystem } from './systems/TutorialSystem'
 import { MainMenu } from './scenes/MainMenu'
+import { ProblemSystem } from './systems/ProblemSystem'
 
 // --- Engine & Scene ---
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
@@ -64,6 +65,25 @@ const phaseOverlay = new PhaseOverlay(ui)
 // End-of-job scorecard
 const scoreCard = new ScoreCard(ui)
 
+// Problem injection system
+const problemSystem = new ProblemSystem(scene, ui, gameState)
+problemSystem.initProblems(3)
+
+// Problem event feedback → HUD
+problemSystem.onProblemEvent.add((event) => {
+  if (event.type === 'triggered') {
+    hud.showMessage(`PROBLEM: ${event.message}`, 5000)
+    audio.playSound('alert_problem')
+  } else if (event.type === 'resolved_correct') {
+    hud.showMessage(event.message, 4000)
+    audio.playSound('alert_success')
+  } else if (event.type === 'resolved_incorrect') {
+    hud.showMessage(event.message, 4000)
+    audio.playSound('alert_error')
+  }
+  hud._updateTasks()
+})
+
 // Tutorial system
 const tutorial = new TutorialSystem(scene, ui, gameState)
 
@@ -94,7 +114,7 @@ phaseOverlay.show(GamePhase.PRE_JOB)
 scene.onKeyboardObservable.add((kbInfo) => {
   if (kbInfo.type !== KeyboardEventTypes.KEYDOWN) return
   // Don't process game keys when overlays are open
-  if (mainMenu.isVisible || equipSelect.isVisible || phaseOverlay.isVisible || scoreCard.isVisible) {
+  if (mainMenu.isVisible || equipSelect.isVisible || phaseOverlay.isVisible || scoreCard.isVisible || problemSystem.isDialogueVisible) {
     // ESC closes scorecard
     if (kbInfo.event.key === 'Escape' && scoreCard.isVisible) {
       scoreCard.hide()
@@ -216,6 +236,11 @@ player.onInteract.add((mesh) => {
     return
   }
 
+  // Problem-related mesh interaction
+  if (name.startsWith('problem_')) {
+    if (problemSystem.handleInteraction(name)) return
+  }
+
   // PTAC unit interaction — count as air handler found
   if (name.startsWith('ptac_unit_')) {
     gameState.completeTask('find-air-handler')
@@ -287,6 +312,9 @@ engine.runRenderLoop(() => {
 
   scene.render()
   hud.updateTimer()
+
+  // Problem system check
+  problemSystem.update(dt)
 
   // Footstep audio based on camera movement
   const cam = player.camera
