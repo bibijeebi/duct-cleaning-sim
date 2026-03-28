@@ -30,30 +30,34 @@ export class EquipmentSystem {
   }
 
   /**
-   * Create visual equipment items near the van.
+   * Create visual equipment items near the van, organized in rows by category.
+   * Items laid out behind the van in neat rows.
    */
   createVanEquipment(vanPosition: Vector3): void {
     const categories = [...new Set(EQUIPMENT.map(e => e.category))];
-    let offsetX = -3;
-    let offsetZ = 0;
+    let rowZ = 0; // each category gets a row
 
     for (const cat of categories) {
       const items = EQUIPMENT.filter(e => e.category === cat);
+      let colX = 0;
+
       for (const item of items) {
-        const size = item.portable ? 0.2 : 0.4;
+        const size = item.portable ? 0.2 : 0.35;
         const mesh = MeshBuilder.CreateBox(`equipment_${item.id}`, {
           width: size,
           height: size,
           depth: size,
         }, this._scene);
+        // Place behind the van in organized rows
         mesh.position = new Vector3(
-          vanPosition.x + offsetX,
+          vanPosition.x - 2.5 + colX * 0.55,
           size / 2,
-          vanPosition.z + offsetZ - 4
+          vanPosition.z + 3.5 + rowZ * 0.6
         );
 
         const mat = new StandardMaterial(`mat_equip_${item.id}`, this._scene);
         mat.diffuseColor = this._getCategoryColor(item.category);
+        mat.specularColor = new Color3(0.15, 0.15, 0.15);
         mesh.material = mat;
         mesh.metadata = {
           interactive: true,
@@ -62,12 +66,13 @@ export class EquipmentSystem {
         };
 
         this._vanEquipmentMeshes.push(mesh);
-        offsetX += 0.6;
-        if (offsetX > 3) {
-          offsetX = -3;
-          offsetZ += 0.6;
+        colX++;
+        if (colX > 8) {
+          colX = 0;
+          rowZ++;
         }
       }
+      rowZ++;
     }
   }
 

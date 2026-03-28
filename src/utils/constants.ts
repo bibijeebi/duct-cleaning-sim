@@ -31,9 +31,12 @@ export const COLORS = {
   AIR_HANDLER: new Color3(0.5, 0.52, 0.55),
   VAV_BOX: new Color3(0.55, 0.55, 0.6),
 
+  // Door frames
+  DOOR_FRAME: new Color3(0.25, 0.22, 0.2),
+
   // Exterior
   PARKING_LOT: new Color3(0.25, 0.25, 0.28),
-  VAN_COLOR: new Color3(0.9, 0.9, 0.92),
+  VAN_COLOR: new Color3(0.15, 0.2, 0.35),  // Dark blue van
   GRASS: new Color3(0.25, 0.45, 0.2),
 
   // Debris levels (interpolate between clean and dirty)

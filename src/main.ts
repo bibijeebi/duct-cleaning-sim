@@ -1,4 +1,4 @@
-import { Engine, Scene, Vector3, HemisphericLight, Color4, KeyboardEventTypes } from '@babylonjs/core'
+import { Engine, Scene, Vector3, HemisphericLight, Color3, Color4, KeyboardEventTypes } from '@babylonjs/core'
 import { AdvancedDynamicTexture } from '@babylonjs/gui'
 import { PHYSICS, COLORS, BUILDING } from './utils/constants'
 import { PlayerController } from './systems/PlayerController'
@@ -25,12 +25,15 @@ const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: true })
 
 const scene = new Scene(engine)
-scene.clearColor = new Color4(0.1, 0.1, 0.12, 1.0)
+scene.clearColor = new Color4(0.55, 0.7, 0.9, 1.0) // Light sky blue
 scene.gravity = new Vector3(0, PHYSICS.GRAVITY, 0)
 scene.collisionsEnabled = true
 
+// Dim ambient light — rooms get their own point lights, exterior gets directional
 const light = new HemisphericLight('ambient', new Vector3(0, 1, 0), scene)
-light.intensity = 0.3
+light.intensity = 0.15
+light.diffuse = new Color3(0.9, 0.92, 0.95)
+light.groundColor = new Color3(0.15, 0.15, 0.18)
 
 // --- Building ---
 const buildingConfig = getScenario1Config()

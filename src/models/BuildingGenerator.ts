@@ -6,6 +6,10 @@ import {
   Vector3,
   Mesh,
   PointLight,
+  DynamicTexture,
+  Texture,
+  DirectionalLight,
+  HemisphericLight,
 } from '@babylonjs/core';
 import { COLORS, BUILDING } from '../utils/constants';
 
@@ -52,33 +56,96 @@ export class BuildingGenerator {
   }
 
   private _createMaterials(): void {
+    // Wall: off-white/beige, slight specular for painted drywall look
     const wallMat = new StandardMaterial('mat_wall', this._scene);
     wallMat.diffuseColor = COLORS.WALL_COLOR;
+    wallMat.specularColor = new Color3(0.05, 0.05, 0.05);
     this._materials.set('wall', wallMat);
 
+    // Floor: gray with subtle grid texture (commercial carpet tile look)
     const floorMat = new StandardMaterial('mat_floor', this._scene);
     floorMat.diffuseColor = COLORS.FLOOR_COLOR;
+    const floorTex = this._createGridTexture('floor_grid', 512, 8,
+      '#4d4d4d', '#525252', 1);
+    floorMat.diffuseTexture = floorTex;
+    floorMat.specularColor = new Color3(0.08, 0.08, 0.08);
     this._materials.set('floor', floorMat);
 
+    // Ceiling: slightly darker than tiles with grid lines (drop ceiling frame)
     const ceilingMat = new StandardMaterial('mat_ceiling', this._scene);
     ceilingMat.diffuseColor = COLORS.CEILING_COLOR;
+    ceilingMat.specularColor = new Color3(0.02, 0.02, 0.02);
     this._materials.set('ceiling', ceilingMat);
 
+    // Ceiling tile: individual tiles with visible edge grid
     const ceilingTileMat = new StandardMaterial('mat_ceiling_tile', this._scene);
-    ceilingTileMat.diffuseColor = COLORS.CEILING_TILE;
+    const tileTex = this._createGridTexture('tile_grid', 128, 1,
+      '#eae9e2', '#d8d6cf', 2);
+    ceilingTileMat.diffuseTexture = tileTex;
+    ceilingTileMat.specularColor = new Color3(0.03, 0.03, 0.03);
     this._materials.set('ceilingTile', ceilingTileMat);
 
+    // Mechanical room floor: darker concrete
     const mechFloorMat = new StandardMaterial('mat_mech_floor', this._scene);
     mechFloorMat.diffuseColor = COLORS.MECHANICAL_FLOOR;
+    const mechTex = this._createGridTexture('mech_grid', 256, 4,
+      '#666b66', '#5e635e', 1);
+    mechFloorMat.diffuseTexture = mechTex;
+    mechFloorMat.specularColor = new Color3(0.05, 0.05, 0.05);
     this._materials.set('mechFloor', mechFloorMat);
 
+    // Parking lot: dark asphalt
     const parkingMat = new StandardMaterial('mat_parking', this._scene);
     parkingMat.diffuseColor = COLORS.PARKING_LOT;
+    parkingMat.specularColor = new Color3(0.02, 0.02, 0.02);
     this._materials.set('parking', parkingMat);
 
+    // Exterior floor (sidewalk)
     const exteriorFloorMat = new StandardMaterial('mat_exterior_floor', this._scene);
     exteriorFloorMat.diffuseColor = new Color3(0.35, 0.35, 0.38);
+    exteriorFloorMat.specularColor = new Color3(0.03, 0.03, 0.03);
     this._materials.set('exteriorFloor', exteriorFloorMat);
+
+    // Door frame: dark trim
+    const doorFrameMat = new StandardMaterial('mat_door_frame', this._scene);
+    doorFrameMat.diffuseColor = COLORS.DOOR_FRAME;
+    doorFrameMat.specularColor = new Color3(0.1, 0.1, 0.1);
+    this._materials.set('doorFrame', doorFrameMat);
+  }
+
+  /**
+   * Create a procedural grid texture for floors/ceilings.
+   */
+  private _createGridTexture(
+    name: string, size: number, divisions: number,
+    fillColor: string, lineColor: string, lineWidth: number
+  ): DynamicTexture {
+    const tex = new DynamicTexture(name, size, this._scene, true);
+    const ctx = tex.getContext();
+    const cellSize = size / divisions;
+
+    // Fill background
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(0, 0, size, size);
+
+    // Draw grid lines
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = lineWidth;
+    for (let i = 0; i <= divisions; i++) {
+      const pos = i * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(pos, 0);
+      ctx.lineTo(pos, size);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(size, pos);
+      ctx.stroke();
+    }
+    tex.update();
+    tex.uScale = 1;
+    tex.vScale = 1;
+    return tex;
   }
 
   generate(config: BuildingConfig): void {
@@ -280,6 +347,9 @@ export class BuildingGenerator {
         aboveWall.checkCollisions = true;
         aboveWall.material = this._materials.get('wall')!;
         this._meshes.push(aboveWall);
+
+        // Door frame — dark rectangular outline around the opening
+        this._createDoorFrame(segStart, opening.width, isXAligned, wall.roomId, wall.side, i);
       }
 
       cursor = openEnd;
@@ -351,6 +421,74 @@ export class BuildingGenerator {
     this._meshes.push(mesh);
   }
 
+  private _createDoorFrame(
+    segStart: Vector3,
+    doorWidth: number,
+    isXAligned: boolean,
+    roomId: string,
+    side: string,
+    index: number
+  ): void {
+    const frameThick = 0.06;
+    const frameDepth = BUILDING.WALL_THICKNESS + 0.04;
+    const doorH = BUILDING.DOOR_HEIGHT;
+    const frameMat = this._materials.get('doorFrame')!;
+
+    // Top header
+    const header = MeshBuilder.CreateBox(
+      `door_frame_top_${roomId}_${side}_${index}`,
+      {
+        width: isXAligned ? doorWidth + frameThick * 2 : frameDepth,
+        height: frameThick,
+        depth: isXAligned ? frameDepth : doorWidth + frameThick * 2,
+      },
+      this._scene
+    );
+    header.position = new Vector3(
+      segStart.x + (isXAligned ? doorWidth / 2 : 0),
+      doorH + frameThick / 2,
+      segStart.z + (isXAligned ? 0 : doorWidth / 2)
+    );
+    header.material = frameMat;
+    this._meshes.push(header);
+
+    // Left jamb
+    const leftJamb = MeshBuilder.CreateBox(
+      `door_frame_left_${roomId}_${side}_${index}`,
+      {
+        width: isXAligned ? frameThick : frameDepth,
+        height: doorH,
+        depth: isXAligned ? frameDepth : frameThick,
+      },
+      this._scene
+    );
+    leftJamb.position = new Vector3(
+      segStart.x + (isXAligned ? -frameThick / 2 : 0),
+      doorH / 2,
+      segStart.z + (isXAligned ? 0 : -frameThick / 2)
+    );
+    leftJamb.material = frameMat;
+    this._meshes.push(leftJamb);
+
+    // Right jamb
+    const rightJamb = MeshBuilder.CreateBox(
+      `door_frame_right_${roomId}_${side}_${index}`,
+      {
+        width: isXAligned ? frameThick : frameDepth,
+        height: doorH,
+        depth: isXAligned ? frameDepth : frameThick,
+      },
+      this._scene
+    );
+    rightJamb.position = new Vector3(
+      segStart.x + (isXAligned ? doorWidth + frameThick / 2 : 0),
+      doorH / 2,
+      segStart.z + (isXAligned ? 0 : doorWidth + frameThick / 2)
+    );
+    rightJamb.material = frameMat;
+    this._meshes.push(rightJamb);
+  }
+
   private _createCeilingTiles(room: RoomConfig, config: BuildingConfig, floorOffset: number = 0): void {
     const tileSize = BUILDING.CEILING_TILE_SIZE;
     const tilesX = Math.floor(room.width / tileSize);
@@ -382,7 +520,7 @@ export class BuildingGenerator {
   }
 
   private _createRoomLighting(room: RoomConfig, config: BuildingConfig, floorOffset: number = 0): void {
-    // Place point lights simulating fluorescent fixtures
+    // Place point lights simulating fluorescent fixtures — cool blue-white indoor
     const lightsX = Math.max(1, Math.floor(room.width / 4));
     const lightsZ = Math.max(1, Math.floor(room.depth / 4));
 
@@ -397,9 +535,10 @@ export class BuildingGenerator {
           ),
           this._scene
         );
-        light.intensity = 0.4;
-        light.range = Math.max(room.width, room.depth) * 1.2;
-        light.diffuse = new Color3(1.0, 0.95, 0.9); // Warm fluorescent
+        light.intensity = 0.5;
+        light.range = Math.max(room.width, room.depth) * 1.5;
+        // Cool fluorescent white (slightly blue) for indoor commercial feel
+        light.diffuse = new Color3(0.95, 0.97, 1.0);
       }
     }
   }
@@ -420,23 +559,98 @@ export class BuildingGenerator {
     parking.material = this._materials.get('parking')!;
     this._meshes.push(parking);
 
-    // Van placeholder
-    const van = MeshBuilder.CreateBox(
-      'van_equipment',
-      { width: 2.5, height: 2.0, depth: 5.0 },
+    // Parking space lines
+    const lineMat = new StandardMaterial('mat_parking_lines', this._scene);
+    lineMat.diffuseColor = new Color3(0.9, 0.9, 0.5);
+    lineMat.emissiveColor = new Color3(0.15, 0.15, 0.05);
+    for (let i = -2; i <= 2; i++) {
+      const line = MeshBuilder.CreateBox(`parking_line_${i}`, {
+        width: 0.08, height: 0.005, depth: 4.0,
+      }, this._scene);
+      line.position = new Vector3(
+        room.x + room.width / 2 + i * 2.8,
+        0.005,
+        room.z + room.depth / 2
+      );
+      line.material = lineMat;
+      this._meshes.push(line);
+    }
+
+    // Outdoor directional light (sunlight)
+    const sunlight = new DirectionalLight(
+      'sunlight',
+      new Vector3(-0.5, -1, 0.3),
       this._scene
     );
-    van.position = new Vector3(
-      room.x + room.width / 2,
-      1.0,
-      room.z + room.depth / 2
+    sunlight.intensity = 0.8;
+    sunlight.diffuse = new Color3(1.0, 0.95, 0.85); // Warm sun
+
+    // Outdoor hemisphere fill light
+    const skyLight = new HemisphericLight(
+      'sky_hemi',
+      new Vector3(0, 1, 0),
+      this._scene
     );
+    skyLight.intensity = 0.4;
+    skyLight.diffuse = new Color3(0.7, 0.8, 1.0);  // Blue sky bounce
+    skyLight.groundColor = new Color3(0.3, 0.3, 0.25);
+
+    // Van — elongated box shape sitting on ground
+    const vanCenterX = room.x + room.width / 2;
+    const vanCenterZ = room.z + room.depth / 2;
+
+    // Van body (main cargo area)
+    const vanBody = MeshBuilder.CreateBox('van_equipment', {
+      width: 2.2, height: 1.9, depth: 5.5,
+    }, this._scene);
+    vanBody.position = new Vector3(vanCenterX, 0.95 + 0.15, vanCenterZ);
     const vanMat = new StandardMaterial('mat_van', this._scene);
     vanMat.diffuseColor = COLORS.VAN_COLOR;
-    van.material = vanMat;
-    van.metadata = { interactive: true, label: 'Work Van' };
-    van.checkCollisions = true;
-    this._meshes.push(van);
+    vanMat.specularColor = new Color3(0.15, 0.15, 0.15);
+    vanBody.material = vanMat;
+    vanBody.metadata = { interactive: true, label: 'Work Van' };
+    vanBody.checkCollisions = true;
+    this._meshes.push(vanBody);
+
+    // Van cab (front, slightly lower and narrower)
+    const vanCab = MeshBuilder.CreateBox('van_cab', {
+      width: 2.0, height: 1.5, depth: 1.5,
+    }, this._scene);
+    vanCab.position = new Vector3(vanCenterX, 0.75 + 0.15, vanCenterZ - 3.2);
+    vanCab.material = vanMat;
+    vanCab.checkCollisions = true;
+    this._meshes.push(vanCab);
+
+    // Van windshield (dark glass)
+    const windshield = MeshBuilder.CreateBox('van_windshield', {
+      width: 1.8, height: 0.8, depth: 0.05,
+    }, this._scene);
+    windshield.position = new Vector3(vanCenterX, 1.0 + 0.15, vanCenterZ - 3.95);
+    const glassMat = new StandardMaterial('mat_van_glass', this._scene);
+    glassMat.diffuseColor = new Color3(0.1, 0.12, 0.15);
+    glassMat.specularColor = new Color3(0.4, 0.4, 0.4);
+    glassMat.alpha = 0.7;
+    windshield.material = glassMat;
+    this._meshes.push(windshield);
+
+    // Wheels (4 cylinders)
+    const wheelMat = new StandardMaterial('mat_wheel', this._scene);
+    wheelMat.diffuseColor = new Color3(0.15, 0.15, 0.15);
+    const wheelPositions = [
+      new Vector3(vanCenterX - 1.15, 0.25, vanCenterZ - 2.5),
+      new Vector3(vanCenterX + 1.15, 0.25, vanCenterZ - 2.5),
+      new Vector3(vanCenterX - 1.15, 0.25, vanCenterZ + 1.5),
+      new Vector3(vanCenterX + 1.15, 0.25, vanCenterZ + 1.5),
+    ];
+    wheelPositions.forEach((pos, i) => {
+      const wheel = MeshBuilder.CreateCylinder(`van_wheel_${i}`, {
+        height: 0.2, diameter: 0.5, tessellation: 12,
+      }, this._scene);
+      wheel.position = pos;
+      wheel.rotation.z = Math.PI / 2;
+      wheel.material = wheelMat;
+      this._meshes.push(wheel);
+    });
   }
 
   private _createElevator(room: RoomConfig, config: BuildingConfig, floorOffset: number): void {
