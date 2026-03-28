@@ -85,8 +85,9 @@ export class DuctNetwork {
 
   private _createMaterials(): void {
     const ductRigid = new StandardMaterial('mat_duct_rigid', this._scene);
-    ductRigid.diffuseColor = COLORS.DUCT_METAL;
-    ductRigid.specularColor = new Color3(0.3, 0.3, 0.3);
+    ductRigid.diffuseColor = new Color3(0.7, 0.72, 0.75); // Brighter metallic silver
+    ductRigid.specularColor = new Color3(0.5, 0.5, 0.5);
+    ductRigid.specularPower = 32;
     this._materials.set('rigid', ductRigid);
 
     const ductFlex = new StandardMaterial('mat_duct_flex', this._scene);
@@ -100,8 +101,9 @@ export class DuctNetwork {
     this._materials.set('ductboard', ductBoard);
 
     const registerMat = new StandardMaterial('mat_register', this._scene);
-    registerMat.diffuseColor = COLORS.REGISTER_COLOR;
-    registerMat.specularColor = new Color3(0.4, 0.4, 0.4);
+    registerMat.diffuseColor = new Color3(0.82, 0.82, 0.85); // Brighter white-ish metal
+    registerMat.specularColor = new Color3(0.5, 0.5, 0.55);
+    registerMat.specularPower = 24;
     this._materials.set('register', registerMat);
 
     const supplyTint = new StandardMaterial('mat_supply_tint', this._scene);
@@ -115,8 +117,8 @@ export class DuctNetwork {
     this._materials.set('return_tint', returnTint);
 
     const handlerMat = new StandardMaterial('mat_air_handler', this._scene);
-    handlerMat.diffuseColor = COLORS.AIR_HANDLER;
-    handlerMat.specularColor = new Color3(0.2, 0.2, 0.2);
+    handlerMat.diffuseColor = new Color3(0.55, 0.57, 0.6);
+    handlerMat.specularColor = new Color3(0.35, 0.35, 0.35);
     this._materials.set('air_handler', handlerMat);
 
     const vavMat = new StandardMaterial('mat_vav', this._scene);
@@ -349,11 +351,11 @@ export class DuctNetwork {
     );
     this.airHandler.position = pos;
 
-    // Main body
+    // Main body — larger to be the biggest equipment in the building
     const body = MeshBuilder.CreateBox('air_handler_body', {
-      width: 1.5,
-      height: 2.0,
-      depth: 1.2,
+      width: 1.8,
+      height: 2.2,
+      depth: 1.4,
     }, this._scene);
     body.position = pos.clone();
     body.material = this._materials.get('air_handler')!;
@@ -362,15 +364,52 @@ export class DuctNetwork {
     this.airHandler.bodyMesh = body;
     this._meshes.push(body);
 
+    // Panel lines on the air handler body (horizontal seam lines)
+    const panelLineMat = new StandardMaterial('mat_ah_panel_line', this._scene);
+    panelLineMat.diffuseColor = new Color3(0.35, 0.37, 0.4);
+    panelLineMat.specularColor = new Color3(0.1, 0.1, 0.1);
+    for (let p = 0; p < 3; p++) {
+      // Horizontal panel lines on front
+      const hLine = MeshBuilder.CreateBox(`ah_panel_h_${p}`, {
+        width: 1.78, height: 0.015, depth: 0.01,
+      }, this._scene);
+      hLine.position = new Vector3(pos.x, pos.y - 0.6 + p * 0.6, pos.z - 0.71);
+      hLine.material = panelLineMat;
+      this._meshes.push(hLine);
+
+      // Horizontal panel lines on sides
+      const sLine = MeshBuilder.CreateBox(`ah_panel_s_${p}`, {
+        width: 0.01, height: 0.015, depth: 1.38,
+      }, this._scene);
+      sLine.position = new Vector3(pos.x + 0.91, pos.y - 0.6 + p * 0.6, pos.z);
+      sLine.material = panelLineMat;
+      this._meshes.push(sLine);
+
+      const sLine2 = MeshBuilder.CreateBox(`ah_panel_s2_${p}`, {
+        width: 0.01, height: 0.015, depth: 1.38,
+      }, this._scene);
+      sLine2.position = new Vector3(pos.x - 0.91, pos.y - 0.6 + p * 0.6, pos.z);
+      sLine2.material = panelLineMat;
+      this._meshes.push(sLine2);
+    }
+    // Vertical panel line (center seam)
+    const vLine = MeshBuilder.CreateBox('ah_panel_v', {
+      width: 0.015, height: 2.18, depth: 0.01,
+    }, this._scene);
+    vLine.position = new Vector3(pos.x, pos.y, pos.z - 0.71);
+    vLine.material = panelLineMat;
+    this._meshes.push(vLine);
+
     // Door (front panel, hinged left)
     const door = MeshBuilder.CreateBox('air_handler_door', {
-      width: 1.4,
-      height: 1.8,
+      width: 1.6,
+      height: 2.0,
       depth: 0.05,
     }, this._scene);
-    door.position = new Vector3(pos.x, pos.y, pos.z - 0.6);
+    door.position = new Vector3(pos.x, pos.y, pos.z - 0.7);
     const doorMat = new StandardMaterial('mat_ah_door', this._scene);
-    doorMat.diffuseColor = new Color3(0.45, 0.47, 0.5);
+    doorMat.diffuseColor = new Color3(0.48, 0.50, 0.53);
+    doorMat.specularColor = new Color3(0.25, 0.25, 0.25);
     door.material = doorMat;
     door.metadata = { interactive: true, label: 'Air Handler Door' };
     this.airHandler.doorMesh = door;
@@ -378,11 +417,11 @@ export class DuctNetwork {
 
     // Coils (visible when door open — initially hidden behind door)
     const coil = MeshBuilder.CreateBox('coil_evaporator', {
-      width: 1.2,
-      height: 1.0,
+      width: 1.4,
+      height: 1.2,
       depth: 0.15,
     }, this._scene);
-    coil.position = new Vector3(pos.x, pos.y + 0.2, pos.z - 0.3);
+    coil.position = new Vector3(pos.x, pos.y + 0.2, pos.z - 0.35);
     coil.material = this._materials.get('coil')!;
     coil.metadata = { interactive: true, label: 'Evaporator Coils' };
     coil.isVisible = false; // hidden until door opened
@@ -391,11 +430,11 @@ export class DuctNetwork {
 
     // Filter slot
     const filter = MeshBuilder.CreateBox('filter_slot', {
-      width: 1.2,
+      width: 1.4,
       height: 0.6,
       depth: 0.08,
     }, this._scene);
-    filter.position = new Vector3(pos.x, pos.y - 0.5, pos.z - 0.35);
+    filter.position = new Vector3(pos.x, pos.y - 0.5, pos.z - 0.4);
     filter.material = this._materials.get('filter')!;
     filter.metadata = { interactive: true, label: 'Air Filter' };
     filter.isVisible = false; // hidden until door opened
@@ -412,12 +451,12 @@ export class DuctNetwork {
       if (this.airHandler.doorOpen) {
         // Swing door open (rotate and offset)
         this.airHandler.doorMesh.rotation.y = -Math.PI / 2;
-        this.airHandler.doorMesh.position.x = this.airHandler.position.x - 0.7;
-        this.airHandler.doorMesh.position.z = this.airHandler.position.z - 0.9;
+        this.airHandler.doorMesh.position.x = this.airHandler.position.x - 0.8;
+        this.airHandler.doorMesh.position.z = this.airHandler.position.z - 1.0;
       } else {
         this.airHandler.doorMesh.rotation.y = 0;
         this.airHandler.doorMesh.position.x = this.airHandler.position.x;
-        this.airHandler.doorMesh.position.z = this.airHandler.position.z - 0.6;
+        this.airHandler.doorMesh.position.z = this.airHandler.position.z - 0.7;
       }
     }
     // Show/hide internal components
